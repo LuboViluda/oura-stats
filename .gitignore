@@ -1,0 +1,3 @@
+# never commit generated files
+*.csv
+*.json
