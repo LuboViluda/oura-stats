@@ -1,3 +1,4 @@
 # never commit generated files
 *.csv
 *.json
+sleep-stats.md

@@ -1,21 +1,31 @@
+import os
 import csv
 import requests
 import json
-import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
-import pandas as pd
-
+import markdown
 
 def build_stats():
+
+    variable_name = "OURA_API_KEY"
+    api_key = os.environ.get(variable_name)
+    if api_key is None:
+        print(f"{variable_name} is not set in the environment variables.")
+        exit(1)
+
     url = 'https://api.ouraring.com/v2/usercollection/sleep'
     params = {
         'start_date': '2023-01-02',
         'end_date': '2023-04-29'
     }
     headers = {
-        'Authorization': 'Bearer {oura-auth-token}'
+        'Authorization': f'Bearer {api_key}'
     }
     response = requests.request('GET', url, headers=headers, params=params)
+
+    if (response.status_code != 200):
+        print(f"Failed to fetch data from oura API, error code: {response.status_code}, error: {response.text}")
+        exit(1)
 
     json_response = json.loads(response.text)
     days = json_response["data"]
@@ -65,11 +75,9 @@ def build_stats():
     baseline_weekly_averages = []
     count = 1
 
-    # TODO store only in fload
-    # to str only for print
     for week, data in week_dict.items():
         weekly_averages = {
-            "week": count,
+            "week": str(count),
             "week-start": week,
             "deep_sleep": "{:.2f}".format(sum(data["deep_sleep"]) / len(data["deep_sleep"])),
             "light_sleep": "{:.2f}".format(sum(data["light_sleep"]) / len(data["light_sleep"])),
@@ -85,7 +93,7 @@ def build_stats():
 
     # average on baseline
     baseline_averages = {
-            "week": 0,
+            "week": 'baseline',
             "week-start": 'avg',
             "deep_sleep": "{:.2f}".format(calculate_field_avg(baseline_weekly_averages, "deep_sleep")),
             "light_sleep": "{:.2f}".format(calculate_field_avg(baseline_weekly_averages, "light_sleep")),
@@ -97,7 +105,7 @@ def build_stats():
     differences = []
     for weekly_average in all_weekly_averages:
         difference = {
-            "week": weekly_average["week"],
+            "week": str(weekly_average["week"]),
             "week-start": weekly_average["week-start"],
             "deep_sleep_diff": "{:.2f}".format(float(weekly_average["deep_sleep"]) - float(baseline_averages["deep_sleep"])),
             "light_sleep_diff": "{:.2f}".format(float(weekly_average["light_sleep"]) - float(baseline_averages["light_sleep"])),
@@ -136,23 +144,45 @@ def build_stats():
         for d in differences:
             writer.writerow(d)
 
-    df = pd.read_csv('all_weekly_averages.csv')
+    weekly_table = build_markdown_table(all_weekly_averages)
 
-    # Select column to plot
-    x = df['deep_sleep']
-    x1 = range(len(x))
-    print(x1)
+    baseline_table = build_markdown_table([baseline_averages])
 
-    # Plot data
-    plt.plot(x1, x)
+    diff_table = build_markdown_table(differences)
 
-    # Add title and labels
-    plt.title('Plot Title')
-    plt.xlabel('week')
-    plt.ylabel('deep sleep')
+    markdown_text = f"""
+# Your sleep data    
 
-    # Show plot
-    plt.show()
+## Average week values
+{weekly_table}
+
+## Long term average (base line)
+{baseline_table}
+    
+## Differences against baseline data
+{diff_table}
+"""
+
+    html = markdown.markdown(markdown_text)
+
+    # Specify the file path and name
+    file_path = "sleep-stats.md"
+
+    # Open the file in write mode
+    with open(file_path, "w") as file:
+        # Write the HTML content to the file
+        file.write(markdown_text)
+
+    print("Markdown content saved to file: ", file_path)
+
+
+def build_markdown_table(differences):
+    table_md = "|".join(differences[0]) + "\n" + "|".join(["---"] * len(differences[0])) + "\n"
+    for row in differences:
+        values = row.values()
+        n = "|".join(values) + "\n"
+        table_md += n
+    return table_md
 
 
 def create_dict_for_day(day, deep_sleep_duration, light_sleep_duration, rem_sleep_duration, average_hrv,
